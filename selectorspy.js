@@ -44,6 +44,7 @@
             this.unspy(namespace, fnName);
 
             selectorAPI.push({
+                native: namespace[fnName],
                 namespace: namespace,
                 fn: fnName
             });
@@ -61,7 +62,7 @@
         retreive: function (namespace, fnName) {
             for (var i = 0; i < selectorAPI.length; i++) {
                 if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
-                    return selectorAPI[i].namespace;
+                    return selectorAPI[i].native;
                 }
             }
             return null;
@@ -76,7 +77,7 @@
         unspy: function (namespace, fnName) {
             for (var i = 0; i < selectorAPI.length; i++) {
                 if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
-                    namespace[fnName] = selectorAPI[i].fn;
+                    namespace[fnName] = selectorAPI[i].native;
                     break;
                 }
             }
@@ -84,6 +85,19 @@
             if (i !== selectorAPI.length) {
                 selectorAPI.splice(i, 1);
             }
+        },
+
+        /**
+         * Stop spying on all selector queries.
+         */
+        unspyAll: function () {
+            var fnName;
+
+            for (var i = 0; i < selectorAPI.length; i++) {
+                fnName = selectorAPI[i].fn;
+                selectorAPI[i].namespace[fnName] = selectorAPI[i].native;
+            }
+            selectorAPI = [];
         }
     }
 }));
@@ -154,4 +168,14 @@ SelectorSpy.spy($, "find", function (native) {
 
     return Sizzle;
 });
+
+
+
+SelectorSpy.unspy($.fn, "find");
+SelectorSpy.unspy($.fn, "not");
+
+var theOriginal = SelectorSpy.retreive(document, "querySelector");
+...
+
+
 */
