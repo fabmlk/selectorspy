@@ -18,21 +18,59 @@
     var selectorAPI = [];
 
 
-    function proxy(namespace, fnName) {
+    function _doCall (context, native, args) {
+        if (args instanceof Array) {
+            return native.apply(context, args);
+        }
+
+        return native.call(context, args);
+    }
+
+
+    function _proxy(namespace, fnName) {
         var native = namespace[fnName];
 
-        return function (args, context) {
+        return function (args, context, bypassed) {
+            var ret, saved = [];
+
             context = context || namespace;
 
-            if (args instanceof Array) {
-                return native.apply(context, args);
-            }
+            bypassed = bypassed || [];
 
-            return native.call(context, args);
+            bypassed.forEach(function (bypass) {
+                var namespace = bypass[0];
+                var fnName = bypass[1];
+                var raw = _search(namespace, fnName);
+
+                if (raw) {
+                    raw.spy = namespace[fnName];
+                    saved.push(raw);
+                    namespace[fnName] = saved.native;
+                }
+            });
+
+            ret = _doCall(context, native, args);
+
+            saved.forEach(function (saved) {
+                var fnName = saved.fn;
+
+                saved.namespace[fnName] = saved.spy;
+            });
+
+            return ret;
         };
     }
 
-    return {
+    function _search (namespace, fnName) {
+        for (var i = 0; i < selectorAPI.length; i++) {
+            if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
+                return selectorAPI[i];
+            }
+        }
+        return null;
+    }
+
+    var SelectorSpy = {
         /**
          * Start spying on a selector query.
          *
@@ -49,7 +87,7 @@
                 fn: fnName
             });
 
-            namespace[fnName] = handler(proxy(namespace, fnName));
+            namespace[fnName] = handler(_proxy(namespace, fnName));
         },
 
         /**
@@ -60,11 +98,12 @@
          * @returns {Function|null} - the native function
          */
         retreive: function (namespace, fnName) {
-            for (var i = 0; i < selectorAPI.length; i++) {
-                if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
-                    return selectorAPI[i].native;
-                }
+            var raw = _search (namespace, fnName);
+
+            if (raw) {
+                return raw.native;
             }
+
             return null;
         },
 
@@ -99,7 +138,9 @@
             }
             selectorAPI = [];
         }
-    }
+    };
+
+    return SelectorSpy;
 }));
 
 /*
