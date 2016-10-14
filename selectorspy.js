@@ -2,7 +2,7 @@
  * Created by fabien.lanoux on 14/10/2016.
  */
 
-(function (factory) {
+(function (root, factory) {
     if (typeof define === "function" && define.amd) {
         // AMD. Register as an anonymous module.
         define([], factory);
@@ -17,91 +17,141 @@
 
     var selectorAPI = [];
 
-    function querySelector(selector, native, otherArgs) {
-        return native.apply(this, [selector].concat(otherArgs || []));
-    }
 
-    function querySelectorProxy(namespace, fnName) {
+    function proxy(namespace, fnName) {
         var native = namespace[fnName];
 
-        return function (selector, context, otherArgs) {
+        return function (args, context) {
             context = context || namespace;
-            return querySelector.call(context, selector, native, otherArgs);
+
+            if (args instanceof Array) {
+                return native.apply(context, args);
+            }
+
+            return native.call(context, args);
         };
     }
 
     return {
-        impersonateSelector: function (namespace, fnName, handler) {
-            for (var found = false, i = 0; i < selectorAPI.length && found === false; i++) {
-                if (selectorAPI[i].namespace === namespace && selectorAPI[i].fnName === fnName) {
-                    found = true;
+        /**
+         * Start spying on a selector query.
+         *
+         * @param {Object} namespace - the object containing the function to spy on
+         * @param {String} fnName - the name of the function to spy on in the namespace
+         * @param {Function} handler - the function replacing the native one
+         */
+        spy: function (namespace, fnName, handler) {
+            this.unspy(namespace, fnName);
+
+            selectorAPI.push({
+                namespace: namespace,
+                fn: fnName
+            });
+
+            namespace[fnName] = handler(proxy(namespace, fnName));
+        },
+
+        /**
+         * Retreive the original native function being spied on.
+         *
+         * @param {Object} namespace - the object containing the function being spied on
+         * @param {String} fnName - the name of the function being spied on on in the namespace
+         * @returns {Function|null} - the native function
+         */
+        retreive: function (namespace, fnName) {
+            for (var i = 0; i < selectorAPI.length; i++) {
+                if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
+                    return selectorAPI[i].namespace;
                 }
             }
-            if (found === false) {
-                selectorAPI.push({
-                    namespace: namespace,
-                    fn: fnName
-                });
+            return null;
+        },
+
+        /**
+         * Stop spying on a selector query.
+         *
+         * @param {Object} namespace - the object containing the function being spied on
+         * @param {String} fnName - the name of the function being spied on in the namespace
+         */
+        unspy: function (namespace, fnName) {
+            for (var i = 0; i < selectorAPI.length; i++) {
+                if (selectorAPI[i].namespace === namespace && selectorAPI[i].fn === fnName) {
+                    namespace[fnName] = selectorAPI[i].fn;
+                    break;
+                }
             }
-            namespace[fnName] = handler(querySelectorProxy(namespace, fnName));
+
+            if (i !== selectorAPI.length) {
+                selectorAPI.splice(i, 1);
+            }
         }
     }
 }));
 
 /*
-Examples:
 
-impersonateSelector(document, "querySelector", function (querySelector) {
+Examples doing nothing, just calling back the native method:
+
+SelectorSpy.spy(document, "querySelector", function (native) {
     return function (selector) {
-        return querySelector(selector);
+        console.log("do something with selector inside querySelector");
+        return native(selector);
     };
 });
 
- impersonateSelector(document, "querySelectorAll", function (querySelector) {
+SelectorSpy.spy(document, "querySelectorAll", function (native) {
     return function (selector) {
-        return querySelector(selector);
+        console.log("do something with selector inside querySelectorAll");
+        return native(selector);
     };
 });
 
- var toto = document.getElementById("toto");
+var toto = document.getElementById("toto");
 
- impersonateSelector(toto, "matches", function (querySelector) {
+SelectorSpy.spy(toto, "matches", function (native) {
     return function (selector) {
-        return querySelector(selector);
+        console.log("do something with selector inside matches");
+        return native(selector);
     };
 });
 
- impersonateSelector($.fn, "not", function (querySelector) {
+SelectorSpy.spy($.fn, "not", function (native) {
     return function (selector) {
-        return querySelector(selector, this);
+        console.log("do something with selector inside jQuery not");
+        return native(selector, this);
     };
 });
 
- impersonateSelector($.fn, "find", function (querySelector) {
+SelectorSpy.spy($.fn, "find", function (native) {
     return function (selector) {
-        return querySelector(selector, this);
+        console.log("do something with selector inside jQuery find");
+        return native(selector, this);
     };
 });
 
- impersonateSelector($.fn, "filter", function (querySelector) {
+SelectorSpy.spy($.fn, "filter", function (native) {
     return function (selector) {
-        return querySelector(selector, this);
+        console.log("do something with selector inside jQuery filter");
+        return native(selector, this);
     };
 });
 
- impersonateSelector($.fn, "is", function (querySelector) {
+SelectorSpy.spy($.fn, "is", function (native) {
     return function (selector) {
-        return querySelector(selector, this);
+        console.log("do something with selector inside jQuery is");
+        return native(selector, this);
     };
 });
 
- impersonateSelector($, "find", function (querySelector) {
+// Support for intercepting delegation
+SelectorSpy.spy($, "find", function (native) {
     var Sizzle = function (selector, context, results) {
-        return querySelector(selector, context, [context, results]);
+        console.log("do something with selector inside jQuery internal find");
+        return native([selector, context, results], this);
     };
 
     $.extend(Sizzle, $.find);
 
     return Sizzle;
 });
- */
+*/
