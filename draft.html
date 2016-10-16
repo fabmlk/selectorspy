@@ -10,21 +10,15 @@
 <body>
 <input type="text" value="toto" pattern="[0-5]+" readonly />
 <script>
-    var handler = function (selector) { console.count("called"); };
+    var handler = function (selector) { console.count("called"); return selector; };
 
 
-    ["not", "filter", "is"].forEach(function (name) {
+    ["not", "filter", "is", "find"].forEach(function (name) {
         SelectorSpy.spy(jQuery.fn, name, function (proxy, bypass) {
-            bypass.push({
-                namespace: jQuery.fn,
-                fn: "find"
-            });
-            return function (selector) {
-                return proxy(handler(selector), this);
-            };
-        });
-
-        SelectorSpy.spy(jQuery.fn, "find", function (proxy) {
+//            bypass.push({
+//                namespace: jQuery,
+//                fn: "find"
+//            });
             return function (selector) {
                 return proxy(handler(selector), this);
             };
