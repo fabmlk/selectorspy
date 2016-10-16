@@ -10,10 +10,6 @@
  *          - {Array}|{*} arguments: the only argument, or array of arguments, the native function is expecting
  *          - {Object} (Optional) context: the context the native function should be called against.
  *                                         If not provided, the default is the namespace.
- *   - {Array} (Optional) bypass:
- *        You can push in it objects of the form {{{Object} namespace, {String} fn}}
- *        describing other spies that will be ignored during the execution of the spy.
- *        See below examples for a use case.
  *
  * Study: it is common to use a spy to:
  *   1 - modify the selector
@@ -69,21 +65,23 @@
  *  3 - the native $.fn.find calls $.find, which we spy on
  *  => if we defined the same spy for both $.fn.find and $.find, the handler will be executed twice which might not
  *  be what we expected when calling the native $.fn.find.
- *  To handle this kind of situation and force the native $.fn.find to call the underlying native methods without ever
- *  calling another spy, you can explicitly exclude other spies in the spy definition.
- *  To do so, the handler accepts an array as 2nd argument that you can fill up with {{{Object}namespace, {String}fn}} objects
- *  describing the spies you want to bypass (see spyjQuery() helper method for an example).
+ *  NB: After many attempts, I failed at resolving this conflict, there seems to be no way to be sure all underlying
+ *  calls will be native.
  */
 
+
+// Uses object-assign ponyfill as Object.assign is part of ES2015, in case not yet supported
 (function (root, factory) {
-    if (typeof define === "function" && define.amd) {
+    if (typeof define === 'function' && define.amd) {
         // AMD. Register as an anonymous module.
         define([], factory);
     } else if (typeof module === 'object' && module.exports) {
-        // Node/CommonJS
+        // Node. Does not work with strict CommonJS, but
+        // only CommonJS-like environments that support module.exports,
+        // like Node.
         module.exports = factory();
     } else {
-        // Browser globals
+        // Browser globals (root is window)
         root.SelectorSpy = factory();
     }
 }(this, function () {
@@ -95,7 +93,6 @@
      *   - {Function} native: a reference to the native function it spies on
      *   - {Object} namespace: the namespace of the function it spies on
      *   - {String} fn: the name of the function it spies on
-     *   - {Array} bypassed: an array of spy description the spy has to bypass
      * Note: operating on an Array is not
      * @type {Array}
      */
@@ -107,16 +104,16 @@
          *
          * @param {Object} namespace - the object containing the function to spy on
          * @param {String} fnName - the name of the function to spy on in the namespace
-         * @param {Function} handler - function ({Function} proxy, [Array] bypass], see doc
+         * @param {Function} handler - function ({Function} proxy}, see doc
          */
         spy: function (namespace, fnName, handler) {
-            var bypassed = [], theSpy;
+            var theSpy, impersonator;
 
             this.unspy(namespace, fnName);
 
             // proxy function around the native call
             function proxy(args, context) {
-                context = context || theSpy.namespace;
+                context = context || namespace;
 
                 if (args instanceof Array === false) {
                     args = [args];
@@ -126,46 +123,12 @@
             }
 
             // create the spy
-            theSpy = handler(proxy, bypassed);
-
-            // check incoherence
-            bypassed.forEach(function (bypass) {
-                if (bypass.namespace === namespace && bypass.fn === fnName) {
-                    throw new Error("Impossible to bypass its own selector.");
-                }
-            });
-
-            // save original handler in each spy that was marked to bypass this new spy
-            spies.forEach(function (spy) {
-                for (var i = 0; i < spy.bypassed.length; i++) {
-                    if (spy.bypassed[i].namespace === namespace && spy.bypassed[i].fn === fnName) {
-                        spy.bypassed[i].handler = handler;
-                        break
-                    }
-                }
-            });
+            theSpy = handler(proxy);
 
             theSpy.native = namespace[fnName];
-            theSpy.namespace = namespace;
-            theSpy.fn = fnName;
-            theSpy.bypassed = bypassed;
 
             // the actual function that will be called by the selector
-            namespace[fnName] = function () {
-                var ret, args = Array.prototype.slice.call(arguments);
-
-                bypassed.forEach(function (bypass) {
-                    SelectorSpy.unspy(bypass.namespace, bypass.fn);
-                });
-
-                ret = theSpy.apply(this, args);
-
-                bypassed.forEach(function (bypass) {
-                    SelectorSpy.spy(bypass.namespace, bypass.fn, bypass.handler);
-                });
-
-                return ret;
-            };
+            namespace[fnName] = theSpy;
 
             spies.push(theSpy);
         },
@@ -223,51 +186,6 @@
                 spies[i].namespace[fnName] = spies[i].native;
             }
             spies = [];
-        },
-
-        /**
-         * Helper method to rapidly spy on QSA (does not spy on .matches)
-         * @param {Function} handler
-         */
-        spyqsa: function (handler) {
-            this.spy(document, 'querySelector', function (proxy) {
-                return function (selector) {
-                    return proxy(handler(selector));
-                };
-            });
-            this.spy(document, 'querySelectorAll', function (proxy) {
-                return function (selector) {
-                    return proxy(handler(selector));
-                };
-            });
-        },
-
-
-        /**
-         * Helper method to rapidly spy on jQuery.
-         * @param {Function} handler
-         */
-        spyjQuery: function (handler) {
-            ["not", "find", "filter", "is"].forEach(function (name) {
-                SelectorSpy.spy(global.jQuery.fn, name, function (proxy, bypassed) {
-                    bypassed.push({
-                        namespace: global.jQuery.fn,
-                        fnName: "find"
-                    });
-                    return function (selector) {
-                        return proxy(handler(selector), this);
-                    };
-                });
-            });
-
-            this.spy(global.jQuery, "find", function (proxy) {
-                var Sizzle = function (selector, context, results) {
-                    return proxy([handler(selector), context, results], this);
-                };
-                $.extend(Sizzle, window.jQuery.find);
-
-                return Sizzle;
-            });
         }
     };
 
