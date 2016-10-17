@@ -126,6 +126,8 @@
             theSpy = handler(proxy);
 
             theSpy.native = namespace[fnName];
+            theSpy.namespace = namespace;
+            theSpy.fn = fnName;
 
             // the actual function that will be called by the selector
             namespace[fnName] = theSpy;
